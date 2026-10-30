@@ -1,0 +1,11 @@
+.env
+*.env
+__pycache__/
+*.pyc
+.venv/
+
+# 대회 참가자 계정으로만 열람 가능한 카카오 문서 사본은 공개 저장소에 올리지 않는다
+docs/kakao_bot/
+
+# 모델 파일
+*.gguf

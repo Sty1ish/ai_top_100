@@ -26,6 +26,9 @@ DEADLINE = float(os.getenv("ANSWER_DEADLINE", "45"))
 FINAL_RESERVE = 12
 # 답이 이보다 길면 문장 끝에서 자른다 (심사 한도 500자, 목표 150자)
 TRIM_AT = int(os.getenv("TRIM_AT", "300"))
+# 답이 이보다 길고 시간이 남으면 한 번 줄여 쓴다
+REWRITE_AT = int(os.getenv("REWRITE_AT", "220"))
+REWRITE_MODEL = os.getenv("REWRITE_MODEL", "claude-haiku-5-5")
 
 FALLBACK = "확인에 시간이 걸리고 있어요. 잠시 후 다시 한 번 말씀해 주세요."
 EMPTY = "다시 한 번 말씀해 주세요."
@@ -35,6 +38,8 @@ _COMPLAINT = re.compile(r"곰팡|상했|상한|썩|부패|배탈|하자|파손|�
 _APOLOGY = re.compile(r"죄송|사과|송구")
 _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
+# 접수 기록이 없는데 "전달했다/접수했다"고 말하는 문장 (거짓 완료 안내 방지)
+_CLAIM = re.compile(r"[^.!?]*(전달했|전달드렸|전달해 ?(두었|드렸)|접수했|접수되었|접수됐|접수해 ?드렸|접수를 ?마쳤)[^.!?]*[.!?]?\s*")
 
 log = logging.getLogger("bot")
 client = anthropic.AsyncAnthropic(max_retries=1)
@@ -122,13 +127,29 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 
         return {"text": FALLBACK, "trace": trace}
 
-    reply = _trim(_API_NAME.sub("", reply).strip()) or EMPTY
+    reply = " ".join(_API_NAME.sub("", reply).split())
+
+    # 접수(API) 기록이 없으면 "전달·접수했다"는 문장을 뺀다
+    if not s.notes.get("접수 완료") and _CLAIM.search(reply):
+        reply = _CLAIM.sub("", reply).strip() or reply
+
+    if len(reply) > REWRITE_AT and deadline - time.monotonic() > 10:
+        t1 = time.monotonic()
+        reply = await _shorten(reply, deadline - time.monotonic() - 2) or reply
+        trace["rewrite_sec"] = round(time.monotonic() - t1, 2)
+
+    reply = _trim(reply) or EMPTY
 
     # 불만·하자 신고 턴인데 사과가 없으면 짧게 붙인다 (세션당 한 번)
     if not s.apologized and _COMPLAINT.search(text) and not _APOLOGY.search(reply):
         reply = _trim("불편을 드려 죄송합니다. " + reply)
 
     s.apologized = s.apologized or bool(_APOLOGY.search(reply))
+
+    # 이력에는 실제로 보낸 답을 남긴다 (줄여 쓰기·문장 제거 반영)
+    if turn[-1]["role"] == "assistant":
+        turn[-1] = {"role": "assistant", "content": [{"type": "text", "text": reply}]}
+
     s.add_turn(_strip_images(turn))
     log.info("agent tc=%s cats=%s calls=%s usage=%s sec=%s", s.tc_id, trace["categories"], trace["calls"], trace["usage"], trace["sec"])
 
@@ -152,6 +173,25 @@ async def _create(s, messages: list[dict], final: bool, remaining: float):
         timeout=max(5.0, min(remaining - 2, 30.0)),
         **kwargs,
     )
+
+
+async def _shorten(text: str, budget: float) -> str | None:
+    """긴 답을 150자 안쪽으로 줄인다. 실패하면 None (원문을 그대로 씀)."""
+    try:
+        res = await client.messages.create(
+            model=REWRITE_MODEL,
+            max_tokens=300,
+            system="고객 상담 답장을 150자 이내 한국어 존댓말 한 문단으로 줄여 쓴다. 사실·숫자·날짜·금액·접수번호·고객에게 묻는 질문은 유지하고, 인사·반복·부연은 뺀다. 새 내용을 더하지 않는다. 줄인 답장만 출력한다.",
+            messages=[{"role": "user", "content": text}],
+            timeout=max(2.0, min(budget, 8.0)),
+        )
+        out = "".join(b.text for b in res.content if b.type == "text").strip()
+
+        return out if 0 < len(out) < len(text) else None
+    except Exception as e:
+        log.warning("shorten failed: %s", e)
+
+        return None
 
 
 def _mark_last(messages: list[dict]) -> list[dict]:
@@ -208,6 +248,10 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
     key = f"{name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
 
     if key in s.called:
+        # 같은 조회는 다시 부르지 않고 앞선 결과를 돌려준다. 접수는 되풀이하지 않는다
+        if key in s.cache and not submit:
+            return {**s.cache[key], "note": "같은 세션에서 앞서 조회한 결과입니다."}
+
         return {"status": 409, "data": "이미 같은 호출을 했습니다. 이전 결과를 쓰세요."}
 
     if name in ("API_35", "API-35"):
@@ -234,7 +278,10 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         if submit:
             s.note("접수 완료", f"{name} {json.dumps(res.get('data'), ensure_ascii=False)[:120]}")
 
-        return {"status": status, "data": actions.slim(name, res.get("data"))}
+        out = {"status": status, "data": actions.slim(name, res.get("data"))}
+        s.cache[key] = out
+
+        return out
 
     return res
 

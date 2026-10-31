@@ -145,7 +145,9 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
     reply = " ".join(kept) or reply
 
     # 고객이 이 세션에서 말하지 않은 식별번호(회원ID·승인번호·전화번호)는 답에 내보내지 않는다
-    reply = _PRIVATE.sub(lambda m: m.group(0) if m.group(0) in s.said else "(확인된 정보)", reply)
+    # 승인번호(PAY-)는 고객 본인 주문을 조회해 얻은 것이면 그대로 둔다
+    seen = json.dumps(list(s.cache.values()), ensure_ascii=False) if s.cache else ""
+    reply = _PRIVATE.sub(lambda m: m.group(0) if m.group(0) in s.said or (m.group(0).startswith("PAY-") and m.group(0) in seen) else "(확인된 정보)", reply)
 
     # 접수(API) 기록이 없으면 "전달·접수했다"는 문장을 뺀다
     if not s.notes.get("접수 완료") and _CLAIM.search(reply):

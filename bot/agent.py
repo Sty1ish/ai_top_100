@@ -38,6 +38,9 @@ _COMPLAINT = re.compile(r"곰팡|상했|상한|썩|부패|배탈|하자|파손|�
 _APOLOGY = re.compile(r"죄송|사과|송구")
 _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
+# 판정용 이관 감지와 예외(안전·배상·법률·사칭·분쟁)
+_JUDGE_ESC = re.compile(r"환불\s*가능\s*여부|하자\s*(여부|판정|인지)|변심\s*(여부|판단|인지)|하자.{0,6}변심|변심.{0,6}하자|판정\s*요청|판단\s*요청")
+_RISK = re.compile(r"배탈|설사|구토|병원|두드러기|언론|기자|방송|소비자원|사칭|피싱|분쟁|소송|배상|안전")
 _HANGUL = re.compile(r"[가-힣]")
 # 고객이 말하지 않은 회원ID·승인번호·전화번호 (답에서 가림)
 _PRIVATE = re.compile(r"(?<![A-Za-z0-9-])(?:MB-\d{3,}|PAY-[\d-]{4,}\d|01[016-9]-?\d{3,4}-?\d{4})(?![\d-])")
@@ -287,6 +290,11 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         # lane은 지정값만 (예: "LANE2_HANDOFF 담당자 확인" → "LANE2_HANDOFF")
         if m := re.match(r"\s*(LANE\d_[A-Z_]+?)(?:_?\s|$)", str(args.get("lane", ""))):
             args = {**args, "lane": m.group(1)}
+
+        # 환불 가능 여부·하자/변심 판정만을 위한 이관은 막는다 (안전·배상·법률·사칭 사안이면 허용)
+        reason = str(args.get("reason", ""))
+        if _JUDGE_ESC.search(reason) and not _RISK.search(reason + s.said):
+            return {"status": 409, "data": "환불 가능 여부·하자/변심 판정은 이관하지 않습니다. 주문·배송 조회 후 refund_terms로 사유별 조건(하자면 전액환불·배송비 무료, 단순변심이면 7일 내 반품·왕복 배송비 부담)을 안내하고 고객이 고르게 하세요."}
 
         esc = f"{args.get('lane')}:{','.join(orders) or _ORDER_IN.findall(str(args.get('reason', '')))[:1]}"
 

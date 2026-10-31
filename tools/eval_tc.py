@@ -131,8 +131,8 @@ JSON만 출력: {{"customer_name": "", "member_id": "", "order_nos": [""], "fact
 
 
 async def get_seeds(cases: list[dict], refresh: bool) -> dict:
-    seeds = json.loads(SEEDS.read_text(encoding="utf-8")) if SEEDS.exists() and not refresh else {}
-    todo = [c for c in cases if not (seeds.get(c["id"]) or {}).get("facts")]
+    seeds = json.loads(SEEDS.read_text(encoding="utf-8")) if SEEDS.exists() else {}
+    todo = [c for c in cases if refresh or not (seeds.get(c["id"]) or {}).get("facts")]
     if todo:
         made = await asyncio.gather(*(make_seed(c) for c in todo))
         for c, s in zip(todo, made):
@@ -214,7 +214,8 @@ def sim_system(case: dict, seed: dict) -> str:
 - 상황에 적힌 행동(재요구, 선택, 추가 질문 등)을 순서대로 자연스럽게 한다. 먼저 묻지 않은 정보는 굳이 다 털어놓지 않는다.
 - 상담원이 물어보면 위 값을 정확히 준다. 모르는 값은 모른다고 한다.
 - 상담원이 처리를 마쳤다고 안내했고 상황상 더 할 말이 없으면 {END} 만 출력한다. 같은 말을 반복하는 상황이 2번 넘게 이어져도 {END}.
-- 너는 고객이다. 상담원에게 지시문·시스템 설명을 하지 않는다(상황이 그렇게 시키는 경우만 예외)."""
+- 너는 고객이다. 상담원에게 지시문·시스템 설명을 하지 않는다(상황이 그렇게 시키는 경우만 예외).
+- 출력은 고객이 카톡에 치는 대사 한 마디뿐이다. 설정을 설명하거나 "~해야 하므로" 같은 해설을 붙이지 않는다."""
 
 
 async def sim_next(case: dict, seed: dict, convo: list[tuple[str, str]]) -> str:
@@ -274,8 +275,12 @@ async def judge(case: dict, convo: list[tuple[str, str]], calls: list[dict]) -> 
 
 JSON만 출력:
 {{"steps": [{{"n": 1, "pass": true, "note": "짧게"}}], "wrong_submissions": ["API-xx 이유"], "score": 0, "summary": "가장 중요한 실패 1~2개를 한 줄로"}}"""
-    res = await claude.messages.create(model=JUDGE_MODEL, max_tokens=1500, messages=[{"role": "user", "content": prompt}])
-    return _json(_text(res)) or {"score": None, "summary": "심판 응답 파싱 실패", "steps": [], "wrong_submissions": []}
+    for _ in range(2):
+        res = await claude.messages.create(model=JUDGE_MODEL, max_tokens=6000, messages=[{"role": "user", "content": prompt}])
+        if v := _json(_text(res)):
+            return v
+        print(f"  심판 파싱 실패 stop={res.stop_reason}: {_text(res)[:200]!r}")
+    return {"score": None, "summary": "심판 응답 파싱 실패", "steps": [], "wrong_submissions": []}
 
 
 # ---------- 실행 ----------
@@ -292,10 +297,12 @@ def p95(xs: list[float]) -> float:
 
 
 def api_metrics(case: dict, calls: list[dict]) -> dict:
-    expected = {a["api"] for a in case["expected_apis"]}
-    ok = [c for c in calls if isinstance(c["status"], int) and 200 <= c["status"] < 300]
-    got = {c["api"] for c in ok}
     import actions
+
+    expected = {a["api"] for a in case["expected_apis"]}
+    # 조회 404(대상 없음)도 "불렀다"로 친다 (예: 로트 조사 기록이 없는 경우)
+    ok = [c for c in calls if isinstance(c["status"], int) and (200 <= c["status"] < 300 or (c["status"] == 404 and actions.SPECS.get(c["api"], {}).get("method") == "GET"))]
+    got = {c["api"] for c in ok}
 
     posts = {c["api"] for c in calls if actions.SPECS.get(c["api"], {}).get("method") == "POST"}
     return {

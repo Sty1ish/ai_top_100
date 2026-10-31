@@ -263,6 +263,10 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         return {"status": 409, "data": "이미 같은 호출을 했습니다. 이전 결과를 쓰세요."}
 
     if name in ("API_35", "API-35"):
+        # lane은 지정값만 (예: "LANE2_HANDOFF 담당자 확인" → "LANE2_HANDOFF")
+        if m := re.match(r"\s*(LANE\d_[A-Z_]+?)(?:_?\s|$)", str(args.get("lane", ""))):
+            args = {**args, "lane": m.group(1)}
+
         esc = f"{args.get('lane')}:{','.join(orders) or _ORDER_IN.findall(str(args.get('reason', '')))[:1]}"
 
         if esc in s.escalated:

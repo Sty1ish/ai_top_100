@@ -4,6 +4,7 @@
 지식 파일은 부를 때마다 읽으므로 파일을 고치면 바로 반영된다.
 """
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -149,7 +150,9 @@ def build_tools(categories: list[str]) -> list[dict]:
     # 분류가 없어도 이관(API_35)은 늘 쓸 수 있게 한다
     # 액션 API 묶음이 없는 분류(event 등)는 이관 도구만 쓴다
     cats = [c if c in actions.GROUPS else "other" for c in ordered(categories)] or ["other"]
-    tools = actions.tools_for(cats) + [actions.API_CALL_TOOL, LEDGER_TOOL] + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
+    # 비교 평가용 스위치 (환경변수, 호출마다 읽음)
+    extra = [t for t, off in ((actions.API_CALL_TOOL, "DISABLE_API_CALL"), (LEDGER_TOOL, "DISABLE_LEDGER")) if os.getenv(off) != "1"]
+    tools = actions.tools_for(cats) + extra + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
     tools[-1] = {**tools[-1], "cache_control": CACHE}
 
     return tools

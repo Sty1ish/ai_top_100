@@ -84,7 +84,9 @@ def ordered(categories: list[str]) -> list[str]:
 
 def build_tools(categories: list[str]) -> list[dict]:
     # 분류가 없어도 이관(API_35)은 늘 쓸 수 있게 한다
-    tools = actions.tools_for(ordered(categories) or ["other"]) + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
+    # 액션 API 묶음이 없는 분류(event 등)는 이관 도구만 쓴다
+    cats = [c if c in actions.GROUPS else "other" for c in ordered(categories)] or ["other"]
+    tools = actions.tools_for(cats) + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
     tools[-1] = {**tools[-1], "cache_control": CACHE}
 
     return tools

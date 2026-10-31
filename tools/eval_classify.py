@@ -1,6 +1,6 @@
 """분류(결정 모델 Julia-1 + 단어 규칙) 정확도 점검. 서버에서 실행한다.
 
-agent.py와 같은 합성 규칙을 쓴다: 단어 규칙 결과 + (규칙이 비었거나 확률 0.6 이상인) 모델 분류.
+agent.py와 같은 진입점 classify.choose를 쓴다. 모델 1순위 정확도는 참고용으로 따로 잰다.
 사용: .venv/bin/python tools/eval_classify.py [docs/contest/classify_cases.json]
 """
 
@@ -16,15 +16,19 @@ sys.path.insert(0, str(ROOT / "bot"))
 
 import classify  # noqa: E402
 
+# 모델 1순위 정확도를 따로 보려면 RAW=1
+RAW = __import__("os").getenv("RAW") == "1"
+
 
 async def route(text: str, prev: str = "") -> dict:
     t0 = time.monotonic()
-    ranked = await classify.classify(text, prev)
+    chosen = await classify.choose(text, prev)
     sec = time.monotonic() - t0
     kw = classify.keyword_categories(text)
-    model = [c for c, p in ranked if not kw or p >= classify.MIN_CONFIDENCE]
-    cats = list(dict.fromkeys(kw + model))
-    src = "kw+model" if kw and model else "kw" if kw else "model" if model else "none"
+    cats = [c for c, _ in chosen]
+    model = [] if kw else cats
+    ranked = await classify.classify(text, prev) if RAW else chosen
+    src = "kw" if kw else "model" if model else "none"
     return {"cats": cats, "kw": kw, "ranked": [(c, round(p, 2)) for c, p in ranked], "model_used": model, "src": src, "sec": sec}
 
 

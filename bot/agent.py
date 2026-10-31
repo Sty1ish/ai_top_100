@@ -55,13 +55,11 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 
     s.observe(text)
 
-    ranked = await classify.classify(text, s.last_user_text)
-    kw = classify.keyword_categories(text)
-    # 단어 규칙에 걸렸으면 결정 모델은 확신할 때(0.6 이상)만 더한다 (잡음 분류로 프롬프트가 커지는 것을 막음)
-    model_cats = [c for c, p in ranked if not kw or p >= classify.MIN_CONFIDENCE]
-    s.add_categories(kw + model_cats)
+    # 분류 진입점은 classify.choose 하나 (규칙 우선, 규칙에 없을 때만 확신 높은 모델 1순위)
+    chosen = await classify.choose(text, s.last_user_text)
+    s.add_categories([c for c, _ in chosen])
     s.last_user_text = text
-    trace["classify"] = [(c, round(p, 2)) for c, p in ranked] + [("kw", kw)]
+    trace["classify"] = [(c, round(p, 2)) for c, p in chosen]
     trace["classify_sec"] = round(time.monotonic() - t0, 2)
 
     user_msg = {"role": "user", "content": _user_content(text, images)}

@@ -52,6 +52,7 @@ _BY_TOOL = {_tool_name(oid): oid for oid in SPECS}
 
 # 환불 접수는 근거를 밝혀야 한다 (압박·위협만으로 환불하지 않게)
 REFUND_BASIS = ["하자확인", "단순변심", "규정반환"]
+TOOL_SPECS["API_22"]["description"] += " 주문 취소가 아니다. 결제는 됐는데 주문이 유실·생성 실패(FAILED)한 경우의 복구만."
 _r = TOOL_SPECS["API_29"]
 _r["description"] += " basis: 하자확인=사진·기록·로트로 하자 확인, 단순변심=청약철회 조건 안에서 고객이 명시적으로 요청, 규정반환=출고 지연 취소·부족분 등 규정상 반환. 여론·신고·병원비 압박만으로는 접수하지 않는다."
 _r["input_schema"]["properties"]["basis"] = {"type": "string", "enum": REFUND_BASIS}

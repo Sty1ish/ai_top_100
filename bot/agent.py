@@ -235,6 +235,10 @@ async def _run_tool(s: sessions.Session, block: dict, trace: dict) -> dict:
             name = str(args.get("name", "")).replace("-", "_")
             args = args.get("args") or {}
             args = json.loads(args) if isinstance(args, str) else args
+
+            # 모델이 {"name", "args"}를 한 겹 더 감싸 보내는 경우를 푼다
+            while isinstance(args, dict) and isinstance(args.get("args"), dict) and set(args) <= {"name", "args"}:
+                args = args["args"]
             out = await _call_action(s, name, args)
         elif name == "date_calc":
             out = prompt.date_calc(**{k: v for k, v in args.items() if k in ("op", "date1", "date2", "days")})

@@ -40,6 +40,8 @@ _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
 # 판정용 이관 감지와 예외(안전·배상·법률·사칭·분쟁)
 _JUDGE_ESC = re.compile(r"환불\s*가능\s*여부|하자\s*(여부|판정|인지)|변심\s*(여부|판단|인지)|하자.{0,6}변심|변심.{0,6}하자|판정\s*요청|판단\s*요청")
+# 규정상 안 되는 요구(현금 차액, 할인 제한 재검토 등)를 고객이 고집해서 넘기는 이관
+_INSIST_ESC = re.compile(r"재검토|현금|예외\s*적용|규정.{0,6}(번복|완화)")
 _RISK = re.compile(r"배탈|설사|구토|병원|두드러기|언론|기자|방송|소비자원|사칭|피싱|분쟁|소송|배상|안전")
 _HANGUL = re.compile(r"[가-힣]")
 # 고객이 말하지 않은 회원ID·승인번호·전화번호 (답에서 가림)
@@ -288,6 +290,10 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         if basis not in actions.REFUND_BASIS:
             return {"status": 409, "data": "환불 근거(basis)가 없습니다. 하자 확인·청약철회 조건의 명시적 요청·규정상 반환일 때만 접수하고, 압박·위협 사안은 공감 후 이관(LANE3_CLAIM 또는 LANE2_HANDOFF)하세요."}
 
+        # 미출고·지연 확인을 물류 담당에게 넘겨 둔 주문은 회신 전에 환불을 접수하지 않는다 (하자 환불은 예외)
+        if basis != "하자확인" and any(o in s.notes.get("물류 이관", []) for o in orders):
+            return {"status": 409, "data": "이 주문은 물류 담당 확인을 요청해 둔 상태입니다. 회신 전에는 환불을 접수하지 말고, 회신 기한과 회신 뒤 대체 배송·미출고분 환불 중 고를 수 있다고 안내하세요."}
+
     if name in ("API_35", "API-35"):
         # lane은 지정값만 (예: "LANE2_HANDOFF 담당자 확인" → "LANE2_HANDOFF")
         if m := re.match(r"\s*(LANE\d_[A-Z_]+?)(?:_?\s|$)", str(args.get("lane", ""))):
@@ -297,6 +303,9 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         reason = str(args.get("reason", ""))
         if _JUDGE_ESC.search(reason) and not _RISK.search(reason + s.said):
             return {"status": 409, "data": "환불 가능 여부·하자/변심 판정은 이관하지 않습니다. 주문·배송 조회 후 refund_terms로 사유별 조건(하자면 전액환불·배송비 무료, 단순변심이면 7일 내 반품·왕복 배송비 부담)을 안내하고 고객이 고르게 하세요."}
+
+        if _INSIST_ESC.search(reason) and not _RISK.search(reason + s.said):
+            return {"status": 409, "data": "규정상 안 되는 요구를 고객이 고집한다는 이유로는 이관하지 않습니다. 규정과 이유를 짧게 설명하고, 규정 안의 대안(보상 쿠폰 발급, 도매 거래 절차 등)을 안내하세요."}
 
         esc = f"{args.get('lane')}:{','.join(orders) or _ORDER_IN.findall(str(args.get('reason', '')))[:1]}"
 
@@ -317,6 +326,10 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
 
         if name in ("API_35", "API-35"):
             s.escalated.add(esc)
+
+            if "LOGISTICS" in str(args.get("reason", "")):
+                for o in orders or _ORDER_IN.findall(str(args.get("reason", "")))[:1]:
+                    s.note("물류 이관", o)
 
         if submit:
             s.note("접수 완료", f"{name} {json.dumps(res.get('data'), ensure_ascii=False)[:120]}")

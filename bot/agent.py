@@ -31,6 +31,7 @@ FALLBACK = "확인에 시간이 걸리고 있어요. 잠시 후 다시 한 번 �
 EMPTY = "다시 한 번 말씀해 주세요."
 
 # 고객에게 내부 도구 이름이 새지 않게 마지막에 지운다 (예: "(API_07)", "API-35로")
+_ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
 
 log = logging.getLogger("bot")
@@ -195,7 +196,20 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
     if submit and orders and not all(o in s.looked_up for o in orders):
         return {"status": 409, "data": "접수 전에 고객이 확인한 이 주문을 먼저 조회(API-07 또는 API-11)하세요."}
 
+    # 같은 세션에서 같은 호출을 되풀이하지 않는다 (재현율·정밀도 감점, 접수 덮어쓰기 방지)
+    key = f"{name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
+
+    if key in s.called:
+        return {"status": 409, "data": "이미 같은 호출을 했습니다. 이전 결과를 쓰세요."}
+
+    if name in ("API_35", "API-35"):
+        esc = f"{args.get('lane')}:{','.join(orders) or _ORDER_IN.findall(str(args.get('reason', '')))[:1]}"
+
+        if esc in s.escalated:
+            return {"status": 409, "data": "같은 주문·같은 lane으로 이미 이관했습니다. 앞선 접수번호를 안내하세요."}
+
     res = await actions.call(name, args, s.tc_id)
+    s.called.add(key)
     status = res.get("status", 0)
 
     if 200 <= status < 300:
@@ -205,6 +219,9 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
 
         for m in _find(args, "member_id"):
             s.note("회원ID", m)
+
+        if name in ("API_35", "API-35"):
+            s.escalated.add(esc)
 
         if submit:
             s.note("접수 완료", f"{name} {json.dumps(res.get('data'), ensure_ascii=False)[:120]}")

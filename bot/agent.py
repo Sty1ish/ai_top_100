@@ -24,6 +24,8 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", "600"))
 DEADLINE = float(os.getenv("ANSWER_DEADLINE", "45"))
 # 남은 시간이 이보다 적으면 도구 없이 바로 답한다
 FINAL_RESERVE = 12
+# 답이 이보다 길면 문장 끝에서 자른다 (심사 한도 500자, 목표 150자)
+TRIM_AT = int(os.getenv("TRIM_AT", "300"))
 
 FALLBACK = "확인에 시간이 걸리고 있어요. 잠시 후 다시 한 번 말씀해 주세요."
 EMPTY = "다시 한 번 말씀해 주세요."
@@ -119,7 +121,7 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 
         return {"text": FALLBACK, "trace": trace}
 
-    reply = _API_NAME.sub("", reply).strip() or EMPTY
+    reply = _trim(_API_NAME.sub("", reply).strip()) or EMPTY
     s.add_turn(_strip_images(turn))
     log.info("agent tc=%s cats=%s calls=%s usage=%s sec=%s", s.tc_id, trace["categories"], trace["calls"], trace["usage"], trace["sec"])
 
@@ -210,6 +212,18 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
         return {"status": status, "data": actions.slim(name, res.get("data"))}
 
     return res
+
+
+def _trim(text: str, limit: int = TRIM_AT) -> str:
+    """안전장치: 너무 길면 limit 안쪽의 마지막 문장 끝에서 자른다."""
+    text = " ".join(text.split())
+
+    if len(text) <= limit:
+        return text
+
+    cut = max(text.rfind(p, 0, limit) for p in (". ", "? ", "! ", "다.", "요."))
+
+    return text[: cut + 2].strip() if cut > limit // 3 else text[:limit].rstrip() + "…"
 
 
 def _find(node, key: str) -> list[str]:

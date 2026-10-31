@@ -30,11 +30,11 @@ LOCAL_TOOLS = [
     },
     {
         "name": "date_calc",
-        "description": "날짜 계산. diff: date1→date2 경과일, add: date1+days, weekday: date1의 요일. 날짜 계산은 반드시 이 도구로 한다.",
+        "description": "날짜 계산. diff: date1→date2 경과일, add: date1+days, add_bdays: date1+영업일 days(주말 제외, 회신 기한 계산용), weekday: date1의 요일. 날짜 계산은 반드시 이 도구로 한다.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "op": {"type": "string", "enum": ["diff", "add", "weekday"]},
+                "op": {"type": "string", "enum": ["diff", "add", "add_bdays", "weekday"]},
                 "date1": {"type": "string", "description": "YYYY-MM-DD"},
                 "date2": {"type": "string", "description": "YYYY-MM-DD (diff)"},
                 "days": {"type": "integer", "description": "더할 일수 (add, 음수 가능)"},
@@ -126,6 +126,15 @@ def date_calc(op: str, date1: str, date2: str | None = None, days: int | None = 
 
         if op == "add":
             r = date.fromordinal(d1.toordinal() + int(days or 0))
+
+            return {"date": r.isoformat(), "weekday": WEEKDAYS[r.weekday()]}
+
+        if op == "add_bdays":
+            r, left = d1, int(days or 0)
+
+            while left > 0:
+                r = date.fromordinal(r.toordinal() + 1)
+                left -= r.weekday() < 5
 
             return {"date": r.isoformat(), "weekday": WEEKDAYS[r.weekday()]}
 

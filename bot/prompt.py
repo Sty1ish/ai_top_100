@@ -39,7 +39,7 @@ LOCAL_TOOLS = [
     },
     {
         "name": "date_calc",
-        "description": "날짜 계산. diff: date1→date2 경과일, add: date1+days, add_bdays: date1+영업일 days(주말 제외, 회신 기한 계산용), weekday: date1의 요일. 날짜 계산은 반드시 이 도구로 한다.",
+        "description": "날짜 계산. diff: date1→date2 경과일, add: date1+days, add_bdays: date1+영업일 days(주말·2037 공휴일 제외, 접수 당일 미포함, 휴일 접수는 다음 영업일 접수. 이관 회신 기한 days=3, 정기배송 컷오프 days=-3), weekday: date1의 요일. 날짜 계산은 반드시 이 도구로 한다.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -182,6 +182,17 @@ def state(session) -> str:
     return "\n".join(lines)
 
 
+# 2037 공휴일·대체공휴일 (영업일달력)
+HOLIDAYS = {
+    "2037-05-06", "2037-05-25", "2037-06-06", "2037-08-15", "2037-08-17", "2037-09-23", "2037-09-24",
+    "2037-09-25", "2037-10-03", "2037-10-05", "2037-10-09", "2037-12-25",
+}
+
+
+def _bday(d: date) -> bool:
+    return d.weekday() < 5 and d.isoformat() not in HOLIDAYS
+
+
 def date_calc(op: str, date1: str, date2: str | None = None, days: int | None = None) -> dict:
     try:
         d1 = date.fromisoformat(date1)
@@ -195,16 +206,22 @@ def date_calc(op: str, date1: str, date2: str | None = None, days: int | None = 
             return {"date": r.isoformat(), "weekday": WEEKDAYS[r.weekday()]}
 
         if op == "add_bdays":
+            # 휴일 접수는 다음 영업일 접수로 보고, 접수 당일은 세지 않는다
+            # 음수면 거꾸로 센다 (정기배송 컷오프: 결제일의 3영업일 전 = days=-3, 그날 24시)
             r, left = d1, int(days or 0)
+            step = 1 if left >= 0 else -1
 
-            while left > 0:
+            while step > 0 and not _bday(r):
                 r = date.fromordinal(r.toordinal() + 1)
-                left -= r.weekday() < 5
+
+            while left != 0:
+                r = date.fromordinal(r.toordinal() + step)
+                left -= step * _bday(r)
 
             return {"date": r.isoformat(), "weekday": WEEKDAYS[r.weekday()]}
 
         if op == "weekday":
-            return {"weekday": WEEKDAYS[d1.weekday()]}
+            return {"weekday": WEEKDAYS[d1.weekday()], "business_day": _bday(d1)}
     except Exception as e:
         return {"error": f"잘못된 입력: {e}"}
 

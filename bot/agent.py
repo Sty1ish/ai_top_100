@@ -135,6 +135,8 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
         return {"text": FALLBACK, "trace": trace}
 
     reply = " ".join(_API_NAME.sub("", reply).split())
+    # 모델이 "어떤…"으로 시작하다 바꿔 쓴 첫 글자가 붙어 나오는 경우("어불편을")를 떼어 낸다
+    reply = re.sub(r"^어(?=불편|죄송|아쉽|확인|주문|환불)", "", reply)
 
     # 한글이 없는 긴 문장(모델의 영어 내부 판단)은 고객에게 보내지 않는다
     kept = [x for x in re.split(r"(?<=[.!?])\s+", reply) if _HANGUL.search(x) or len(x) < 15]

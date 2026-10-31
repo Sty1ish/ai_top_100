@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 
 import anthropic
@@ -26,6 +27,9 @@ FINAL_RESERVE = 12
 
 FALLBACK = "확인에 시간이 걸리고 있어요. 잠시 후 다시 한 번 말씀해 주세요."
 EMPTY = "다시 한 번 말씀해 주세요."
+
+# 고객에게 내부 도구 이름이 새지 않게 마지막에 지운다 (예: "(API_07)", "API-35로")
+_API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
 
 log = logging.getLogger("bot")
 client = anthropic.AsyncAnthropic(max_retries=1)
@@ -115,7 +119,7 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 
         return {"text": FALLBACK, "trace": trace}
 
-    reply = reply or EMPTY
+    reply = _API_NAME.sub("", reply).strip() or EMPTY
     s.add_turn(_strip_images(turn))
     log.info("agent tc=%s cats=%s calls=%s usage=%s sec=%s", s.tc_id, trace["categories"], trace["calls"], trace["usage"], trace["sec"])
 
@@ -160,6 +164,8 @@ async def _run_tool(s: sessions.Session, block: dict, trace: dict) -> dict:
             cat = args.get("category", "")
             s.add_categories([cat] if cat in classify.CATEGORIES else [])
             out = prompt.read_policy(cat) or "해당 분류의 지식이 없습니다."
+        elif name == "load_doc":
+            out = prompt.read_doc(str(args.get("name", "")))
         elif name == "date_calc":
             out = prompt.date_calc(**{k: v for k, v in args.items() if k in ("op", "date1", "date2", "days")})
         else:

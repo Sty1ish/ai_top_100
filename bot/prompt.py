@@ -12,6 +12,8 @@ from classify import CATEGORIES
 
 KNOWLEDGE = Path(__file__).resolve().parent.parent / "knowledge"
 POLICY_DIR = KNOWLEDGE / "policy"
+DOCS_DIR = KNOWLEDGE / "docs"
+DOC_LIMIT = 6000
 WEEKDAYS = "월화수목금토일"
 
 CACHE = {"type": "ephemeral"}
@@ -43,6 +45,29 @@ LOCAL_TOOLS = [
 ]
 
 
+def doc_names() -> list[str]:
+    return sorted(p.stem for p in DOCS_DIR.glob("*.md")) if DOCS_DIR.exists() else []
+
+
+def read_doc(name: str) -> str:
+    path = DOCS_DIR / f"{Path(name).stem}.md"
+
+    if not path.exists():
+        return f"없는 문서입니다. 가능한 문서: {', '.join(doc_names())}"
+
+    text = path.read_text(encoding="utf-8")
+
+    return text[:DOC_LIMIT] + ("\n…(이하 생략)" if len(text) > DOC_LIMIT else "")
+
+
+def doc_tool() -> dict:
+    return {
+        "name": "load_doc",
+        "description": "규정 원문을 불러온다. 지식 절에 없는 세부 조문이 필요할 때만 쓴다. 문서: " + ", ".join(doc_names()),
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    }
+
+
 def read_policy(category: str) -> str:
     path = POLICY_DIR / f"{category}.md"
 
@@ -59,7 +84,7 @@ def ordered(categories: list[str]) -> list[str]:
 
 def build_tools(categories: list[str]) -> list[dict]:
     # 분류가 없어도 이관(API_35)은 늘 쓸 수 있게 한다
-    tools = actions.tools_for(ordered(categories) or ["other"]) + LOCAL_TOOLS
+    tools = actions.tools_for(ordered(categories) or ["other"]) + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
     tools[-1] = {**tools[-1], "cache_control": CACHE}
 
     return tools
@@ -83,6 +108,7 @@ def state(session) -> str:
         "## 상담 정보",
         f"- 오늘(문의일) = {session.today}({WEEKDAYS[d.weekday()]}). 기간·기한 판단은 이 날짜 기준.",
         f"- TC ID = {session.tc_id or '없음'}",
+        "- 답은 한 문단, 150자 이내. 도구 이름·내부 직원 이름은 쓰지 않음. 접수번호를 받은 처리만 완료라고 말함.",
     ]
 
     for key, values in session.notes.items():

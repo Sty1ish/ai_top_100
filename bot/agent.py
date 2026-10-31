@@ -38,6 +38,8 @@ _COMPLAINT = re.compile(r"곰팡|상했|상한|썩|부패|배탈|하자|파손|�
 _APOLOGY = re.compile(r"죄송|사과|송구")
 _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
+# 고객이 말하지 않은 회원ID·승인번호·전화번호 (답에서 가림)
+_PRIVATE = re.compile(r"MB-\d{3,}|PAY-[\d-]{4,}|01[016-9]-?\d{3,4}-?\d{4}")
 # 접수 기록이 없는데 "전달했다/접수했다"고 말하는 문장 (거짓 완료 안내 방지)
 _CLAIM = re.compile(r"[^.!?]*(전달했|전달드렸|전달해 ?(두었|드렸)|접수했|접수되었|접수됐|접수해 ?드렸|접수를 ?마쳤)[^.!?]*[.!?]?\s*")
 
@@ -59,6 +61,7 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
     t0 = time.monotonic()
 
     s.observe(text)
+    s.said += "\n" + text
 
     # 분류 진입점은 classify.choose 하나 (규칙 우선, 규칙에 없을 때만 확신 높은 모델 1순위)
     chosen = await classify.choose(text, s.last_user_text)
@@ -128,6 +131,9 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
         return {"text": FALLBACK, "trace": trace}
 
     reply = " ".join(_API_NAME.sub("", reply).split())
+
+    # 고객이 이 세션에서 말하지 않은 식별번호(회원ID·승인번호·전화번호)는 답에 내보내지 않는다
+    reply = _PRIVATE.sub(lambda m: m.group(0) if m.group(0) in s.said else "(확인된 정보)", reply)
 
     # 접수(API) 기록이 없으면 "전달·접수했다"는 문장을 뺀다
     if not s.notes.get("접수 완료") and _CLAIM.search(reply):
@@ -261,6 +267,12 @@ async def _call_action(s: sessions.Session, name: str, args: dict) -> dict:
             return {**s.cache[key], "note": "같은 세션에서 앞서 조회한 결과입니다."}
 
         return {"status": 409, "data": "이미 같은 호출을 했습니다. 이전 결과를 쓰세요."}
+
+    if name in ("API_29", "API-29"):
+        basis = args.get("basis")
+
+        if basis not in actions.REFUND_BASIS:
+            return {"status": 409, "data": "환불 근거(basis)가 없습니다. 하자 확인·청약철회 조건의 명시적 요청·규정상 반환일 때만 접수하고, 압박·위협 사안은 공감 후 이관(LANE3_CLAIM 또는 LANE2_HANDOFF)하세요."}
 
     if name in ("API_35", "API-35"):
         # lane은 지정값만 (예: "LANE2_HANDOFF 담당자 확인" → "LANE2_HANDOFF")

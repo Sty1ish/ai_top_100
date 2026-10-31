@@ -33,6 +33,7 @@ class Session:
     apologized: bool = False
     escalated: set[str] = field(default_factory=set)  # 이관한 lane:주문  # 조회해 본 주문번호 (접수 전 확인용)
     last_user_text: str = ""
+    said: str = ""  # 이 세션에서 고객이 한 말 전부 (식별번호 노출 점검용)
     last_at: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 

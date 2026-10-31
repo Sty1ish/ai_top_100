@@ -142,7 +142,7 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 
     # 접수(API) 기록이 없으면 "전달·접수했다"는 문장을 뺀다
     if not s.notes.get("접수 완료") and _CLAIM.search(reply):
-        reply = _CLAIM.sub("", reply).strip() or reply
+        reply = " ".join(_CLAIM.sub(" ", reply).split()) or reply
 
     if len(reply) > REWRITE_AT and deadline - time.monotonic() > 10:
         t1 = time.monotonic()

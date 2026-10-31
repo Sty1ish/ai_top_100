@@ -140,7 +140,7 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
 async def _create(s, messages: list[dict], final: bool, remaining: float):
     messages = _mark_last(messages)
     # 생각(thinking)은 지연·토큰만 늘려서 끈다
-    kwargs = {"thinking": {"type": "disabled"}}
+    kwargs = {"thinking": {"type": "between_tools" if "sonnet" in MODEL or "opus" in MODEL else "disabled"}}
 
     if final:
         kwargs["tool_choice"] = {"type": "none"}

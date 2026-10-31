@@ -96,7 +96,7 @@ GROUPS: dict[str, list[str]] = {
     "promo": _g(7, 8, 9, 12, 13, 14, 15, 16, 20, 33, 34) + _COMMON,
     "account": _g(5, 7, 8, 12, 13, 14, 15, 19, 40) + _COMMON,
     "product": _g(1, 2, 3, 19, 21, 39, 40) + _COMMON,
-    "other": _g(35),
+    "other": _g(35, 36),
 }
 
 

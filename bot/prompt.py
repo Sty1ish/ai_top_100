@@ -20,6 +20,15 @@ CACHE = {"type": "ephemeral"}
 
 LOCAL_TOOLS = [
     {
+        "name": "refund_terms",
+        "description": "청약철회·환불 문의에 쓸 안내 문장을 만든다(수령일부터 문의일까지 경과일, 7일 기준, 사유별 조건). 배송 조회로 수령일을 확인한 뒤 부르고, 결과 문장을 그대로 안내에 쓴다.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"received_date": {"type": "string", "description": "수령일 YYYY-MM-DD"}},
+            "required": ["received_date"],
+        },
+    },
+    {
         "name": "load_policy",
         "description": "다른 분류의 정책·지식 절을 불러온다. 지금 받은 지식에 답이 없을 때 쓴다.",
         "input_schema": {
@@ -66,6 +75,22 @@ def doc_tool() -> dict:
         "description": "규정 원문을 불러온다. 지식 절에 없는 세부 조문이 필요할 때만 쓴다. 문서: " + ", ".join(doc_names()),
         "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }
+
+
+def refund_terms(received_date: str, today: str) -> str:
+    try:
+        r, t = date.fromisoformat(received_date[:10]), date.fromisoformat(today)
+    except ValueError:
+        return "수령일 형식이 잘못됐습니다(YYYY-MM-DD)."
+
+    days = (t - r).days
+    within = "청약철회 기간(수령 후 7일) 이내" if days <= 7 else "청약철회 기간(수령 후 7일)이 지난 상태"
+
+    return (
+        f"{r.month}월 {r.day}일 수령, 오늘 기준 {days}일째로 {within}입니다. "
+        "상품 하자면 전액환불·배송비 무료, 단순 변심이면 미개봉 상품에 한해 수령 7일 이내 반품 가능하고 왕복 배송비는 고객 부담입니다. "
+        "환불은 원하신다고 말씀해 주셔야 접수됩니다."
+    )
 
 
 def read_policy(category: str) -> str:

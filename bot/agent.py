@@ -31,6 +31,8 @@ FALLBACK = "확인에 시간이 걸리고 있어요. 잠시 후 다시 한 번 �
 EMPTY = "다시 한 번 말씀해 주세요."
 
 # 고객에게 내부 도구 이름이 새지 않게 마지막에 지운다 (예: "(API_07)", "API-35로")
+_COMPLAINT = re.compile(r"곰팡|상했|상한|썩|부패|배탈|하자|파손|깨졌|안 ?와|안 ?왔|늦|화나|짜증|실망|불만|만 왔|일부만|오배송|잘못 왔|셔요|너무 셔|이상해|광고|따지")
+_APOLOGY = re.compile(r"죄송|사과|송구")
 _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
 
@@ -123,6 +125,12 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
         return {"text": FALLBACK, "trace": trace}
 
     reply = _trim(_API_NAME.sub("", reply).strip()) or EMPTY
+
+    # 불만·하자 신고 턴인데 사과가 없으면 짧게 붙인다 (세션당 한 번)
+    if not s.apologized and _COMPLAINT.search(text) and not _APOLOGY.search(reply):
+        reply = _trim("불편을 드려 죄송합니다. " + reply)
+
+    s.apologized = s.apologized or bool(_APOLOGY.search(reply))
     s.add_turn(_strip_images(turn))
     log.info("agent tc=%s cats=%s calls=%s usage=%s sec=%s", s.tc_id, trace["categories"], trace["calls"], trace["usage"], trace["sec"])
 
@@ -167,6 +175,8 @@ async def _run_tool(s: sessions.Session, block: dict, trace: dict) -> dict:
             cat = args.get("category", "")
             s.add_categories([cat] if cat in classify.CATEGORIES else [])
             out = prompt.read_policy(cat) or "해당 분류의 지식이 없습니다."
+        elif name == "refund_terms":
+            out = prompt.refund_terms(str(args.get("received_date", "")), s.today)
         elif name == "load_doc":
             out = prompt.read_doc(str(args.get("name", "")))
         elif name == "date_calc":

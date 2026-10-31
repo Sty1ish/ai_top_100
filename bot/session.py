@@ -29,6 +29,7 @@ class Session:
     notes: dict[str, list[str]] = field(default_factory=dict)  # 확인된 주문번호·회원·접수번호
     looked_up: set[str] = field(default_factory=set)
     called: set[str] = field(default_factory=set)  # 이미 한 도구 호출 (이름+인자)
+    apologized: bool = False
     escalated: set[str] = field(default_factory=set)  # 이관한 lane:주문  # 조회해 본 주문번호 (접수 전 확인용)
     last_user_text: str = ""
     last_at: float = field(default_factory=time.monotonic)

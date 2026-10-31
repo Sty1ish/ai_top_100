@@ -213,10 +213,46 @@ def text_response(text: str, quick_replies: list[str] | None = None) -> dict:
     return skill_response([simple_text(c) for c in chunks], quick_replies)
 
 
+# 심사는 SimpleText 말풍선만 평가하고, 다른 말풍선이 나오면 그 케이스를 끝낸다.
+# 말풍선 수·글자 수가 적을수록 유리하고 500자를 넘으면 평가에서 빠진다.
+JUDGED_MAX_CHARS = 500
+
+
+def _texts(node) -> list[str]:
+    if isinstance(node, dict):
+        if "text" in node and isinstance(node["text"], str):
+            return [node["text"]]
+
+        out = []
+        for key in ("title", "description"):
+            if isinstance(node.get(key), str):
+                out.append(node[key])
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                out += _texts(value)
+        return out
+
+    if isinstance(node, list):
+        return [t for item in node for t in _texts(item)]
+
+    return []
+
+
+def judged_response(response: dict) -> dict:
+    """어떤 응답이든 SimpleText 말풍선 하나(500자 이내)로 바꾼다. 바로가기 버튼도 뺀다."""
+    text = "\n".join(t.strip() for t in _texts(response.get("template", {}).get("outputs", [])) if t.strip())
+    text = text or "다시 한 번 말씀해 주세요."
+
+    if len(text) > JUDGED_MAX_CHARS:
+        text = text[: JUDGED_MAX_CHARS - 1] + "…"
+
+    return {"version": "2.0", "template": {"outputs": [simple_text(text)]}}
+
+
 async def send_callback(callback_token: str, response: dict) -> httpx.Response:
     async with httpx.AsyncClient(timeout=10) as client:
         return await client.post(
             CALLBACK_URL,
-            json={"skillResponse": response},
+            json={"skillResponse": judged_response(response)},
             headers={"Authorization": f"KakaoAK {BOT_TOKEN}", "X-Bot-Callback-Token": callback_token},
         )

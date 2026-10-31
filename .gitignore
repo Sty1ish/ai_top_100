@@ -9,3 +9,6 @@ docs/kakao_bot/
 
 # 모델 파일
 *.gguf
+
+# 대회 참가자 전용 문서 사본
+docs/contest/

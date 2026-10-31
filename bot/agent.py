@@ -38,6 +38,7 @@ _COMPLAINT = re.compile(r"곰팡|상했|상한|썩|부패|배탈|하자|파손|�
 _APOLOGY = re.compile(r"죄송|사과|송구")
 _ORDER_IN = re.compile(r"\b1\d{8}\b")
 _API_NAME = re.compile(r"\s*\(?\bAPI[_-]\d+\)?")
+_HANGUL = re.compile(r"[가-힣]")
 # 고객이 말하지 않은 회원ID·승인번호·전화번호 (답에서 가림)
 _PRIVATE = re.compile(r"MB-\d{3,}|PAY-[\d-]{4,}|01[016-9]-?\d{3,4}-?\d{4}")
 # 접수 기록이 없는데 "전달했다/접수했다"고 말하는 문장 (거짓 완료 안내 방지)
@@ -131,6 +132,10 @@ async def _answer(s: sessions.Session, text: str, images: list[str], deadline: f
         return {"text": FALLBACK, "trace": trace}
 
     reply = " ".join(_API_NAME.sub("", reply).split())
+
+    # 한글이 없는 긴 문장(모델의 영어 내부 판단)은 고객에게 보내지 않는다
+    kept = [x for x in re.split(r"(?<=[.!?])\s+", reply) if _HANGUL.search(x) or len(x) < 15]
+    reply = " ".join(kept) or reply
 
     # 고객이 이 세션에서 말하지 않은 식별번호(회원ID·승인번호·전화번호)는 답에 내보내지 않는다
     reply = _PRIVATE.sub(lambda m: m.group(0) if m.group(0) in s.said else "(확인된 정보)", reply)

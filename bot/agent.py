@@ -217,6 +217,14 @@ async def _run_tool(s: sessions.Session, block: dict, trace: dict) -> dict:
             out = prompt.refund_terms(str(args.get("received_date", "")), s.today)
         elif name == "load_doc":
             out = prompt.read_doc(str(args.get("name", "")))
+        elif name == "ledger_lookup":
+            out = prompt.ledger_lookup(str(args.get("kind", "")), str(args.get("query", "")))
+        elif name == "api_call":
+            # 범용 호출도 개별 도구와 같은 확인(조회 후 접수, 중복 차단)을 거친다
+            name = str(args.get("name", "")).replace("-", "_")
+            args = args.get("args") or {}
+            args = json.loads(args) if isinstance(args, str) else args
+            out = await _call_action(s, name, args)
         elif name == "date_calc":
             out = prompt.date_calc(**{k: v for k, v in args.items() if k in ("op", "date1", "date2", "days")})
         else:

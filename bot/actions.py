@@ -51,6 +51,28 @@ TOOL_SPECS: dict[str, dict] = {
 _BY_TOOL = {_tool_name(oid): oid for oid in SPECS}
 
 
+def _index_line(oid: str, spec: dict) -> str:
+    keys = spec["path_params"] + spec["query_params"] + list(spec["body"]["properties"])
+    mark = "[접수] " if spec["method"] == "POST" else ""
+    return f"{_tool_name(oid)} {mark}{spec['desc'].split('.')[0][:30]}({','.join(keys)})"
+
+
+# 분류에 묶이지 않은 범용 도구: 지금 도구 목록에 없는 API가 필요할 때 이름으로 부른다
+API_CALL_TOOL = {
+    "name": "api_call",
+    "description": "액션 API를 이름으로 호출한다. 지금 도구 목록에 필요한 API가 없을 때 쓴다. 조회는 바로 실행되고, [접수]는 대상 주문을 먼저 조회했고 고객이 명시적으로 요청했을 때만 쓴다. 목록: "
+    + "; ".join(_index_line(oid, sp) for oid, sp in SPECS.items() if oid.startswith("API-")),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "enum": [_tool_name(o) for o in SPECS if o.startswith("API-")]},
+            "args": {"type": "object", "description": "그 API의 인자 (예: {\"order_no\": \"100100016\"})"},
+        },
+        "required": ["name", "args"],
+    },
+}
+
+
 def _g(*nums: int) -> list[str]:
     return [f"API_{n:02d}" for n in nums]
 

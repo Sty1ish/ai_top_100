@@ -54,6 +54,44 @@ LOCAL_TOOLS = [
 ]
 
 
+# 내부 원장(인터뷰 제공 자료) 검색: 종류 → 문서
+LEDGERS = {
+    "ticket": "상담이력원장",
+    "promo": "프로모션마스터",
+    "lot": "로트검사_로트원장",
+    "sku": "SKU카탈로그",
+    "event": "행사목록",
+    "banner": "배너자료",
+}
+LEDGER_TOOL = {
+    "name": "ledger_lookup",
+    "description": "내부 원장에서 검색어가 모두 들어간 행을 찾는다. ticket=상담 이력(고객 성·TICKET번호·유형·날짜), promo=프로모션 원장(코드), lot=로트 원장(로트·주문번호·SKU), sku=SKU 카탈로그(SKU·품목), event=행사 목록(날짜·이름), banner=배너(BN-번호). 같은 정보를 주는 API(API_05·06 상담, API_20 프로모션, API_03 로트, API_01·21 상품)가 있으면 API를 먼저 쓰고 이것은 보조·대조용. 다른 고객의 상담 내용은 고객에게 말하지 않는다.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"kind": {"type": "string", "enum": list(LEDGERS)}, "query": {"type": "string", "description": "검색어(공백으로 여러 개, 모두 포함한 행)"}},
+        "required": ["kind", "query"],
+    },
+}
+
+
+def ledger_lookup(kind: str, query: str, limit: int = 2500) -> str:
+    path = DOCS_DIR / f"{LEDGERS.get(kind, '')}.md"
+
+    if kind not in LEDGERS or not path.exists():
+        return f"없는 원장입니다. 종류: {', '.join(LEDGERS)}"
+
+    terms = [t.lower() for t in query.split() if t.strip()]
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("<!--")]
+    hits = [ln[:300] for ln in lines if terms and all(t in ln.lower() for t in terms)]
+
+    if not hits:
+        return f"'{query}'에 맞는 행이 {LEDGERS[kind]}에 없습니다."
+
+    out = "\n".join(hits)
+
+    return out[:limit] + ("\n…(더 있음, 검색어를 좁히세요)" if len(out) > limit else "")
+
+
 def doc_names() -> list[str]:
     return sorted(p.stem for p in DOCS_DIR.glob("*.md")) if DOCS_DIR.exists() else []
 
@@ -111,7 +149,7 @@ def build_tools(categories: list[str]) -> list[dict]:
     # 분류가 없어도 이관(API_35)은 늘 쓸 수 있게 한다
     # 액션 API 묶음이 없는 분류(event 등)는 이관 도구만 쓴다
     cats = [c if c in actions.GROUPS else "other" for c in ordered(categories)] or ["other"]
-    tools = actions.tools_for(cats) + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
+    tools = actions.tools_for(cats) + [actions.API_CALL_TOOL, LEDGER_TOOL] + LOCAL_TOOLS + ([doc_tool()] if doc_names() else [])
     tools[-1] = {**tools[-1], "cache_control": CACHE}
 
     return tools
